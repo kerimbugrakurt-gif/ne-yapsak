@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Ne Yapsak?",
+    "slug": "ne-yapsak",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.neyapsak.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F6F4FF",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.neyapsak.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single",
+      "name": "Ne Yapsak?",
+      "shortName": "Ne Yapsak?",
+      "themeColor": "#4B3FD1",
+      "backgroundColor": "#F6F4FF",
+      "lang": "tr"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+    "scheme": "neyapsak",
+    "splash": {
+      "backgroundColor": "#F6F4FF"
+    }
+  }
+}
