@@ -1,9 +1,9 @@
 import { normalize } from "./collector.js";
-import { db, upsertEvents } from "./db.js";
+import type { Store } from "./store.js";
 import type { EventRecord } from "./types.js";
 
 /**
- * İlk açılışta veritabanı boşsa yüklenen, elle doğrulanmış başlangıç verisi (Kasım 2026).
+ * İlk çalıştırmada veri dosyası boşsa yüklenen, elle doğrulanmış başlangıç verisi (Kasım 2026).
  * Toplayıcı (collector) çalıştıkça bunların yerini güncel kayıtlar alır.
  */
 type SeedInput = { city: string } & Record<string, unknown>;
@@ -27,14 +27,13 @@ const SEED: SeedInput[] = [
   { city: "İzmir", kind: "suren", title: "Lumina: Renk ve Işık Sanatı", category: "sergi", venue: "Lucien Arkas Sanat Merkezi", district: null, startDate: "2026-09-26", endDate: "2027-02-14", time: null, priceText: null, priceMin: null, isFree: false, url: "https://tr.euronews.com/2026/09/27/centre-pompidounun-83-eseri-izmirde-lumina-sergisi-acildi", source: "Euronews / Centre Pompidou", summary: "Centre Pompidou koleksiyonundan 83 eser, renk ve ışık üzerine. İzmir'in bu sezonki en büyük sergisi.", note: "Bitiş tarihi kaynaklarda 14-17 Şubat arası değişiyor.", goodFor: ["ilk-date", "partner", "yalniz", "aile", "arkadaslar"], tags: ["sakin", "kapali-mekan", "gunduz"] },
 ];
 
-/** Veritabanı boşsa başlangıç verisini yükler. */
-export function seedIfEmpty(today: string): number {
-  const { n } = db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number };
-  if (n > 0) return 0;
+/** Dosya boşsa başlangıç verisini yükler. */
+export function seedIfEmpty(store: Store, today: string): number {
+  if (store.size > 0) return 0;
   const ok: EventRecord[] = [];
   for (const { city, ...raw } of SEED) {
     const r = normalize(raw, city, today);
     if (r.ok) ok.push(r.event);
   }
-  return upsertEvents(ok);
+  return store.upsert(ok);
 }

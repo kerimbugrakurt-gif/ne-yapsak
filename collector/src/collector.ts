@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { logRunEnd, logRunStart, pruneOld, titlesFor, upsertEvents } from "./db.js";
+import type { Store } from "./store.js";
 import { CATEGORIES, CITIES, COMPANIONS, type EventRecord } from "./types.js";
 
 const MODEL = process.env.COLLECTOR_MODEL ?? "claude-opus-5-5";
@@ -99,13 +99,9 @@ const SAVE_TOOL: Anthropic.Beta.BetaTool = {
   },
 };
 
+/** Türkiye 2016'dan beri sabit UTC+3. */
 export function istanbulToday(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Istanbul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
+  return new Date(now.getTime() + 3 * 3600_000).toISOString().slice(0, 10);
 }
 
 function addDays(iso: string, n: number): string {
@@ -167,11 +163,10 @@ export interface CollectResult {
   rejected: string[];
 }
 
-export async function collect(client: Anthropic, city: string, beat: Beat): Promise<CollectResult> {
+export async function collect(client: Anthropic, store: Store, city: string, beat: Beat): Promise<CollectResult> {
   const today = istanbulToday();
   const until = addDays(today, WINDOW_DAYS);
-  const known = titlesFor(city, today);
-  const runId = logRunStart(city, beat);
+  const known = store.titlesFor(city, today);
   const result: CollectResult = { city, beat, saved: 0, rejected: [] };
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -199,59 +194,53 @@ export async function collect(client: Anthropic, city: string, beat: Beat): Prom
 
   let savedOnce = false;
   let nudged = false;
-  try {
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const res = await client.beta.messages.create({
-        model: MODEL,
-        max_tokens: 16000,
-        system: SYSTEM,
-        cache_control: { type: "ephemeral" },
-        output_config: { effort: "medium" },
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        tools,
-        messages,
-      });
-      if (res.stop_reason === "refusal") throw new Error("model isteği reddetti");
-      messages.push({ role: "assistant", content: res.content });
-      if (res.stop_reason === "pause_turn") continue;
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const res = await client.beta.messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      system: SYSTEM,
+      cache_control: { type: "ephemeral" },
+      output_config: { effort: "medium" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      tools,
+      messages,
+    });
+    if (res.stop_reason === "refusal") throw new Error("model isteği reddetti");
+    messages.push({ role: "assistant", content: res.content });
+    if (res.stop_reason === "pause_turn") continue;
 
-      const uses = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-      if (uses.length === 0) {
-        if (savedOnce || nudged) break;
-        nudged = true;
-        messages.push({ role: "user", content: "Bulduklarını şimdi save_events ile kaydet." });
+    const uses = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+    if (uses.length === 0) {
+      if (savedOnce || nudged) break;
+      nudged = true;
+      messages.push({ role: "user", content: "Bulduklarını şimdi save_events ile kaydet." });
+      continue;
+    }
+    if (res.stop_reason === "max_tokens") throw new Error("araç girdisi kesildi (max_tokens)");
+
+    const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    for (const u of uses) {
+      if (u.name !== "save_events") {
+        results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: `Bilinmeyen araç: ${u.name}` });
         continue;
       }
-      if (res.stop_reason === "max_tokens") throw new Error("araç girdisi kesildi (max_tokens)");
-
-      const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
-      for (const u of uses) {
-        if (u.name !== "save_events") {
-          results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: `Bilinmeyen araç: ${u.name}` });
-          continue;
-        }
-        const list = Array.isArray((u.input as { events?: unknown }).events) ? (u.input as { events: unknown[] }).events : [];
-        const good: EventRecord[] = [];
-        for (const raw of list) {
-          const n = normalize(raw, city, today);
-          if (n.ok) good.push(n.event);
-          else result.rejected.push(n.reason);
-        }
-        result.saved += upsertEvents(good);
-        savedOnce = true;
-        results.push({
-          type: "tool_result",
-          tool_use_id: u.id,
-          content: `${good.length} kayıt kaydedildi.${result.rejected.length ? ` Reddedilenler: ${result.rejected.slice(-10).join("; ")}` : ""}`,
-        });
+      const list = Array.isArray((u.input as { events?: unknown }).events) ? (u.input as { events: unknown[] }).events : [];
+      const good: EventRecord[] = [];
+      for (const raw of list) {
+        const n = normalize(raw, city, today);
+        if (n.ok) good.push(n.event);
+        else result.rejected.push(n.reason);
       }
-      messages.push({ role: "user", content: results });
+      result.saved += store.upsert(good);
+      savedOnce = true;
+      results.push({
+        type: "tool_result",
+        tool_use_id: u.id,
+        content: `${good.length} kayıt kaydedildi.${result.rejected.length ? ` Reddedilenler: ${result.rejected.slice(-10).join("; ")}` : ""}`,
+      });
     }
-    logRunEnd(runId, result.saved, null);
-  } catch (err) {
-    logRunEnd(runId, result.saved, (err as Error).message);
-    throw err;
+    messages.push({ role: "user", content: results });
   }
   return result;
 }
@@ -259,16 +248,18 @@ export async function collect(client: Anthropic, city: string, beat: Beat): Prom
 /** Tüm şehir ve konuları sırayla tarar; biri hata verirse diğerleriyle devam eder. */
 export async function collectAll(
   client: Anthropic,
+  store: Store,
   cities: readonly string[] = CITIES,
   log: (msg: string) => void = console.log,
 ): Promise<CollectResult[]> {
-  const removed = pruneOld(istanbulToday());
+  const removed = store.prune(istanbulToday());
   if (removed) log(`[collector] ${removed} eski etkinlik silindi`);
   const out: CollectResult[] = [];
   for (const city of cities) {
     for (const beat of Object.keys(BEATS) as Beat[]) {
       try {
-        const r = await collect(client, city, beat);
+        const r = await collect(client, store, city, beat);
+        store.save(false); // her adımdan sonra yaz: iş yarıda kesilse de bulunanlar kaybolmasın
         log(`[collector] ${city}/${beat}: ${r.saved} kaydedildi, ${r.rejected.length} reddedildi`);
         out.push(r);
       } catch (err) {

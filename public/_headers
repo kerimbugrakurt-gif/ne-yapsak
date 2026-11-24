@@ -1,0 +1,4 @@
+/events.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=600
+  Content-Type: application/json; charset=utf-8

@@ -1,14 +1,23 @@
 {
-  "cli": { "version": ">= 16.0.0", "appVersionSource": "remote" },
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
   "build": {
     "preview": {
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "https://ne-yapsak.onrender.com" }
+      "env": {
+        "EXPO_PUBLIC_DATA_URL": "https://ne-yapsak.pages.dev"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_URL": "https://ne-yapsak.onrender.com" }
+      "env": {
+        "EXPO_PUBLIC_DATA_URL": "https://ne-yapsak.pages.dev"
+      }
     }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": {}
+  }
 }

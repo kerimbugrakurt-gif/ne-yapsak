@@ -1,4 +1,4 @@
-// Sunucudaki server/src/types.ts ve feed.ts ile aynı sözleşme.
+// collector/src/types.ts ile aynı sözleşme (public/events.json biçimi).
 
 export type Category =
   | "konser"
@@ -23,6 +23,30 @@ export interface Profile {
   interests: Category[];
   companion: Companion;
   budget: Budget;
+}
+
+/** events.json içindeki bir kayıt. */
+export interface EventRecord {
+  id: string;
+  kind: "tek" | "suren" | "kalici";
+  title: string;
+  category: Category;
+  city: string;
+  venue: string;
+  district: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  time: string | null;
+  priceText: string | null;
+  priceMin: number | null;
+  isFree: boolean;
+  url: string;
+  source: string;
+  summary: string;
+  note: string | null;
+  goodFor: Companion[];
+  tags: string[];
+  updatedAt: string;
 }
 
 export interface FeedItem {

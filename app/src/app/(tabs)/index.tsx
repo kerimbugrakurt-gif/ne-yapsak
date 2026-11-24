@@ -5,13 +5,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Chip } from "../../components/Chip";
 import { HERO_WIDTH, HeroCard, SmallCard } from "../../components/EventCards";
 import { Icon } from "../../components/Icon";
-import { fetchFeed } from "../../lib/api";
+import { loadFeed } from "../../lib/api";
+import { longDate } from "../../lib/feed";
 import { useStore } from "../../lib/store";
 import { colors, fonts, radius, space, TAB_BAR_SPACE } from "../../lib/theme";
 import { COMPANIONS, type Companion, type FeedResponse, type FeedSection } from "../../lib/types";
 
-const LONG = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", timeZone: "UTC" });
-const fmt = (iso: string) => LONG.format(new Date(`${iso}T12:00:00Z`));
 
 export default function Discover() {
   const { profile, saveProfile } = useStore();
@@ -20,13 +19,13 @@ export default function Discover() {
   const [refreshing, setRefreshing] = useState(false);
   const ctl = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!profile) return;
     ctl.current?.abort();
     const c = new AbortController();
     ctl.current = c;
     try {
-      const f = await fetchFeed(profile, c.signal);
+      const f = await loadFeed(profile, { signal: c.signal, force, onCached: (cf) => !c.signal.aborted && setFeed(cf) });
       if (!c.signal.aborted) {
         setFeed(f);
         setError(null);
@@ -43,7 +42,7 @@ export default function Discover() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true);
     setRefreshing(false);
   };
 
@@ -93,7 +92,7 @@ export default function Discover() {
         {error && (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable onPress={load} style={styles.retry} accessibilityRole="button">
+            <Pressable onPress={() => load(true)} style={styles.retry} accessibilityRole="button">
               <Icon name="refresh" size={18} color={colors.accent} />
               <Text style={styles.retryText}>Tekrar dene</Text>
             </Pressable>
@@ -103,17 +102,17 @@ export default function Discover() {
         {feed && feed.sections.length === 0 && (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{profile.city} için henüz etkinlik yok</Text>
-            <Text style={styles.muted}>Etkinlik listesi her hafta iki kez güncellenir. Biraz sonra tekrar bak ya da başka bir şehir seç.</Text>
+            <Text style={styles.muted}>Etkinlik listesi haftada iki kez güncellenir. Biraz sonra tekrar bak ya da başka bir şehir seç.</Text>
           </View>
         )}
 
         {feed?.sections.map((s, i) => (
-          <Section key={s.id} section={s} subtitle={i === 0 ? `${fmt(feed.weekend.from)} – ${fmt(feed.weekend.to)}` : undefined} />
+          <Section key={s.id} section={s} subtitle={i === 0 ? `${longDate(feed.weekend.from)} – ${longDate(feed.weekend.to)}` : undefined} />
         ))}
 
         {feed?.updatedAt && (
           <Text style={styles.updated}>
-            Liste {new Date(feed.updatedAt).toLocaleDateString("tr-TR", { day: "numeric", month: "long" })} tarihinde güncellendi. Gitmeden önce bilet sayfasından tarih ve saati kontrol et.
+            Liste {longDate(feed.updatedAt.slice(0, 10))} tarihinde güncellendi. Gitmeden önce bilet sayfasından tarih ve saati kontrol et.
           </Text>
         )}
       </ScrollView>

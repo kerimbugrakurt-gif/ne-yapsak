@@ -1,0 +1,63 @@
+name: Etkinlikleri topla
+
+on:
+  schedule:
+    # Pazartesi ve Perşembe 05:20 (İstanbul) = 02:20 UTC
+    - cron: "20 2 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      city:
+        description: "Tek şehir (boş bırakılırsa COLLECT_CITIES ayarındaki şehirler)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: collector/package-lock.json
+
+      - name: Bağımlılıkları kur
+        working-directory: collector
+        run: npm ci
+
+      - name: Etkinlikleri topla
+        working-directory: collector
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COLLECT_CITIES: ${{ vars.COLLECT_CITIES || 'İstanbul' }}
+          SEARCHES_PER_RUN: ${{ vars.SEARCHES_PER_RUN || '6' }}
+          CITY: ${{ inputs.city }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY sırrı tanımlı değil (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          if [ -n "$CITY" ]; then npm run collect -- "$CITY"; else npm run collect; fi
+
+      - name: Değişiklikleri kaydet
+        if: ${{ !cancelled() }}
+        run: |
+          if git diff --quiet -- public/events.json; then
+            echo "Değişiklik yok."
+            exit 0
+          fi
+          git config user.name "ne-yapsak-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/events.json
+          git commit -m "Etkinlikler güncellendi ($(date -u +%Y-%m-%d))"
+          git push
